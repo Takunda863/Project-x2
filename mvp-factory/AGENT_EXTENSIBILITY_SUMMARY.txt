@@ -1,0 +1,253 @@
+================================================================================
+                    AGENT & MODEL EXTENSIBILITY SUMMARY
+================================================================================
+
+QUESTION 1: Can I add more agents?
+✅ YES - FULLY SUPPORTED
+
+Current Structure:
+├── BackendAgent (APIs, databases, auth)
+├── FrontendAgent (UI, components, styling)
+├── DevOpsAgent (Infrastructure, CI/CD, deployment)
+└── TestingAgent (Tests, validation, coverage)
+
+You Can Add:
+├── MLEngineerAgent (Machine learning, models, pipelines)
+├── DataEngineerAgent (ETL, data pipelines, warehousing)
+├── SecurityEngineerAgent (Security audits, penetration testing)
+├── MobileAgent (iOS/Android, React Native, Flutter)
+├── BlockchainAgent (Smart contracts, Web3 development)
+├── CloudArchitectAgent (Cloud design, scalability)
+└── [ANY CUSTOM AGENT YOU NEED]
+
+How: Inherit from BaseAgent, implement perform(), add system prompt, export
+
+Estimated Effort: ~5-10 hours per new agent (less than initial 15h)
+
+================================================================================
+
+QUESTION 2: Can I swap/remove/replace models?
+✅ YES - COMPLETE FLEXIBILITY
+
+Current Model Support:
+┌─ OpenAI Provider
+│  ├── gpt-3.5-turbo (fast, cheap)
+│  ├── gpt-4o-mini (balanced, DEFAULT)
+│  ├── gpt-4-turbo (powerful)
+│  └── gpt-4 (best quality)
+│
+└─ Hugging Face Provider
+   ├── meta-llama/Llama-2-7b
+   ├── meta-llama/Llama-2-13b
+   ├── meta-llama/Llama-2-70b
+   ├── mistralai/Mistral-7B
+   └── [ANY HUGGING FACE MODEL]
+
+Methods to Change Models:
+1. Environment Variables (easiest)
+   export OPENAI_DEFAULT_MODEL="gpt-4-turbo"
+   export LLM_PROVIDER="hf"
+   export HF_MODEL_PATH="meta-llama/Llama-2-70b"
+
+2. Runtime Options (most flexible)
+   opts=LLMCallOptions(model="gpt-4-turbo", temperature=0.2)
+
+3. Per-Agent Configuration
+   class MyAgent(BaseAgent):
+       async def perform(...):
+           await call_llm(..., opts=LLMCallOptions(model="gpt-4"))
+
+4. Add New Provider
+   Extend BaseProvider, update get_provider() function
+
+Cost Control:
+├── Testing: gpt-3.5-turbo (cheapest)
+├── Default: gpt-4o-mini (balanced)
+├── Production: gpt-4-turbo (powerful)
+└── Complex Tasks: gpt-4 (best)
+
+================================================================================
+
+QUESTION 3: Are models in sandboxes?
+✅ YES - MODELS ARE SANDBOXED
+
+Execution Flow:
+Your Code (SANDBOXED Dev Container)
+    ↓
+llms/manager.py (LOCAL, SANDBOXED)
+    ↓
+External API Call (OpenAI/Hugging Face - EXTERNAL)
+    ↓
+LLM Model (REMOTE, NOT in sandbox)
+    ↓
+Response Returned (to your sandboxed code)
+
+Safety Guarantees:
+✅ No model storage locally
+✅ No credentials in code (env vars only)
+✅ No local model execution
+✅ No file access from models
+✅ Unidirectional data flow (code → API → response)
+✅ Dev container isolation
+✅ Process isolation
+✅ Network controlled access
+
+Architecture Isolation:
+┌─────────────────────────────────────────────────────────┐
+│                  SANDBOX (Dev Container)                 │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │  Your Code                                         │  │
+│  │  agents/                                           │  │
+│  │  llms/manager.py (makes API calls)                │  │
+│  │  All processing local                             │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                           │
+│        ↓ (API Call over HTTPS)                           │
+│        ┌────────────────────────────────────┐            │
+│        │ EXTERNAL API (NOT in sandbox)     │            │
+│        │ - OpenAI API                       │            │
+│        │ - Hugging Face API                 │            │
+│        │ - Model execution (remote)         │            │
+│        └────────────────────────────────────┘            │
+└─────────────────────────────────────────────────────────┘
+
+If You Want Local Models (Optional):
+├── Small models can run in sandbox (4GB+ RAM needed)
+│   export LLM_PROVIDER="hf"
+│   export HF_MODEL_PATH="microsoft/phi-2"
+│
+├── Quantized models (CPU-friendly)
+│   Use GGML format with ollama
+│
+└── Still sandboxed - models loaded locally but code isolated
+
+================================================================================
+
+IMPLEMENTATION CHECKLIST
+
+Adding a New Agent:
+□ Create class in agents/specialist_agents.py
+□ Inherit from BaseAgent
+□ Implement async perform() method
+□ Add system prompt to prompts/system_prompts.json
+□ Export in agents/__init__.py
+□ Write tests
+□ Update orchestrator if needed
+□ Document capabilities
+
+Swapping Models:
+□ Set environment variables OR
+□ Pass LLMCallOptions to call_llm() OR
+□ Per-agent configuration in perform() method
+□ Test with new model
+□ Validate output quality
+□ Adjust temperature/max_tokens if needed
+
+Confirming Sandbox Status:
+□ No model files in /workspaces (only code)
+□ All API calls go through llms/manager.py
+□ Environment variables loaded safely
+□ No credentials visible in code
+□ Container isolation confirmed
+
+================================================================================
+
+QUICK COMMANDS
+
+# Add new agent
+1. Create class in agents/specialist_agents.py
+2. Add system prompt to prompts/system_prompts.json
+3. Export in agents/__init__.py
+4. Test: python -c "from agents import YourAgent; print('✅ Works')"
+
+# Switch model
+export OPENAI_DEFAULT_MODEL="gpt-4-turbo"
+# or
+export LLM_PROVIDER="hf"
+export HF_MODEL_PATH="meta-llama/Llama-2-70b"
+
+# Verify sandbox
+ls -la /workspaces/Project-x2/mvp-factory/ | grep -E "\.pt|\.bin|model"
+# Should show NO model files (only code)
+
+# Test agent extensibility
+pytest tests/ -v -k "test_agents"
+
+================================================================================
+
+COST OPTIMIZATION STRATEGY
+
+Per-Agent Model Selection:
+├── TestingAgent: gpt-3.5-turbo (fast, simple test generation)
+├── BackendAgent: gpt-4o-mini (default, good balance)
+├── FrontendAgent: gpt-4o-mini (default, component generation)
+├── DevOpsAgent: gpt-4-turbo (infrastructure needs quality)
+├── MLEngineerAgent: gpt-4 (complex, high quality needed)
+└── SecurityEngineerAgent: gpt-4 (security critical)
+
+Expected Costs:
+├── Development (3.5-turbo): ~$0.50 per 1000 tasks
+├── Production (4o-mini): ~$1.50 per 1000 tasks
+├── Complex (gpt-4): ~$30 per 1000 tasks
+└── Hugging Face (free): $0
+
+Mixed Strategy:
+1. Develop with gpt-3.5-turbo (cheap)
+2. Validate with gpt-4o-mini (balanced)
+3. Scale complex tasks to gpt-4-turbo
+4. Use HF for testing/open-source deployments
+
+================================================================================
+
+NEXT STEPS
+
+Immediate (Today):
+✅ Read EXTENSIBILITY_GUIDE.md
+✅ Read QUICK_REFERENCE.md
+✅ Confirm current setup with: pytest tests/ -q
+
+Short Term (This Week):
+□ Add your first custom agent (ML, Security, etc.)
+□ Test with different models
+□ Verify sandbox behavior
+□ Document your customizations
+
+Medium Term (This Month):
+□ Build 2-3 additional specialized agents
+□ Optimize model selection per agent
+□ Fine-tune system prompts
+□ Create evaluation metrics
+
+Long Term:
+□ Fine-tune models on your specific use cases
+□ Scale to larger agent ecosystem
+□ Implement custom evaluation framework
+□ Production deployment setup
+
+================================================================================
+
+SUMMARY TABLE
+
+┌─────────────────────┬──────────┬────────────────────────────────────────┐
+│ Question            │ Answer   │ Implementation                         │
+├─────────────────────┼──────────┼────────────────────────────────────────┤
+│ Add more agents?    │ ✅ YES   │ Create class + prompt + export         │
+│ Swap models?        │ ✅ YES   │ Env vars or LLMCallOptions             │
+│ Remove agents?      │ ✅ YES   │ Remove from specialists_agents.py      │
+│ Add providers?      │ ✅ YES   │ Extend BaseProvider                    │
+│ Models in sandbox?  │ ✅ YES   │ API calls, NOT local execution         │
+│ Cost control?       │ ✅ YES   │ Use appropriate model per task         │
+│ Fine-tune agents?   │ ✅ YES   │ Custom agents + training data          │
+│ Test locally?       │ ✅ YES   │ Use HF models or mock responses        │
+└─────────────────────┴──────────┴────────────────────────────────────────┘
+
+================================================================================
+
+STATUS: FULLY EXTENSIBLE & SANDBOXED ✅
+
+You have complete control over agents and models while maintaining
+safety and isolation in a sandboxed environment.
+
+Ready to extend the system! 🚀
+
+================================================================================

@@ -1,0 +1,580 @@
+From 5f0c6ca21d49cd9f40428a3dec72020960552bcb Mon Sep 17 00:00:00 2001
+From: Takundanashe Moyo <moyotakundanashe@gmail.com>
+Date: Tue, 23 Dec 2025 21:21:12 +0000
+Subject: [PATCH] fix: map auth tasks to auth_agent; add SQL concat detection
+ in security scanner
+
+---
+ orchestrator/task_parser.py    | 289 +++++++++++++++++++++++++++++++++
+ validation/security_scanner.py | 267 ++++++++++++++++++++++++++++++
+ 2 files changed, 556 insertions(+)
+
+diff --git a/orchestrator/task_parser.py b/orchestrator/task_parser.py
+index e69de29..b1b3e62 100644
+--- a/orchestrator/task_parser.py
++++ b/orchestrator/task_parser.py
+@@ -0,0 +1,289 @@
++"""
++Task Parser Module
++Converts natural language project descriptions into structured tasks
++"""
++
++import re
++import json
++from typing import Dict, List, Any, Optional, Tuple
++from dataclasses import dataclass
++from enum import Enum
++
++class TaskType(Enum):
++    """Types of development tasks"""
++    CREATE_API = "create_api"
++    CREATE_UI = "create_ui"
++    SETUP_DATABASE = "setup_database"
++    IMPLEMENT_AUTH = "implement_auth"
++    ADD_FEATURE = "add_feature"
++    DEPLOY = "deploy"
++    TEST = "test"
++    INTEGRATE_SERVICE = "integrate_service"
++
++@dataclass
++class Task:
++    """Structured development task"""
++    task_id: str
++    task_type: TaskType
++    description: str
++    priority: int  # 1=highest, 3=lowest
++    dependencies: List[str]  # task_ids this depends on
++    estimated_time: int  # in minutes
++    agent_type: str  # which agent should handle this
++    parameters: Dict[str, Any]
++    
++    def to_dict(self) -> Dict[str, Any]:
++        """Convert task to dictionary"""
++        return {
++            "task_id": self.task_id,
++            "task_type": self.task_type.value,
++            "description": self.description,
++            "priority": self.priority,
++            "dependencies": self.dependencies,
++            "estimated_time": self.estimated_time,
++            "agent_type": self.agent_type,
++            "parameters": self.parameters
++        }
++
++class TaskParser:
++    """
++    Parses natural language project descriptions into structured task lists
++    Can be extended with LLM-based parsing later
++    """
++    
++    def __init__(self):
++        # Common patterns for rule-based parsing
++        self.patterns = {
++            "auth": [
++                r"user.*(auth|login|sign.?in|sign.?up|register)",
++                r"authenticat",
++                r"jwt|oauth|saml"
++            ],
++            "api": [
++                r"(api|endpoint|rest|graphql)",
++                r"(get|post|put|delete).*data",
++                r"crud|create.*read.*update.*delete"
++            ],
++            "database": [
++                r"database|db|store.*data",
++                r"postgres|mysql|mongodb|sqlite",
++                r"schema|table|collection"
++            ],
++            "ui": [
++                r"ui|ux|interface|front.?end",
++                r"page|screen|view",
++                r"react|vue|angular|svelte"
++            ],
++            "deploy": [
++                r"deploy|host|publish",
++                r"server|cloud|aws|azure|gcp",
++                r"docker|container|kubernetes"
++            ]
++        }
++        
++        # Agent mapping
++        self.agent_mapping = {
++            "auth": "auth_agent",
++            "api": "backend_agent", 
++            "database": "backend_agent",
++            "ui": "frontend_agent",
++            "deploy": "devops_agent"
++        }
++    
++    def parse_natural_language(self, description: str) -> List[Task]:
++        """
++        Parse natural language description into tasks
++        This is a rule-based implementation that can be replaced with LLM
++        """
++        description_lower = description.lower()
++        
++        # Extract requirements using simple pattern matching
++        tasks = []
++        task_id_counter = 1
++        
++        # Check for authentication requirements
++        if any(re.search(pattern, description_lower) for pattern in self.patterns["auth"]):
++            tasks.append(Task(
++                task_id=f"TASK_{task_id_counter:03d}",
++                task_type=TaskType.IMPLEMENT_AUTH,
++                description="Implement user authentication system",
++                priority=1,
++                dependencies=[],
++                estimated_time=30,
++                agent_type=self.agent_mapping.get("auth", "backend_agent"),
++                parameters={
++                    "auth_method": "jwt",
++                    "features": ["login", "register", "password_reset"]
++                }
++            ))
++            task_id_counter += 1
++        
++        # Check for API requirements
++        if any(re.search(pattern, description_lower) for pattern in self.patterns["api"]):
++            tasks.append(Task(
++                task_id=f"TASK_{task_id_counter:03d}",
++                task_type=TaskType.CREATE_API,
++                description="Create REST API endpoints",
++                priority=1,
++                dependencies=["TASK_001"] if "TASK_001" in [t.task_id for t in tasks] else [],
++                estimated_time=45,
++                agent_type=self.agent_mapping.get("api", "backend_agent"),
++                parameters={
++                    "framework": "fastapi",
++                    "documentation": True,
++                    "versioning": "v1"
++                }
++            ))
++            task_id_counter += 1
++        
++        # Check for database requirements
++        if any(re.search(pattern, description_lower) for pattern in self.patterns["database"]):
++            tasks.append(Task(
++                task_id=f"TASK_{task_id_counter:03d}",
++                task_type=TaskType.SETUP_DATABASE,
++                description="Set up database schema and connection",
++                priority=1,
++                dependencies=[],
++                estimated_time=25,
++                agent_type=self.agent_mapping.get("database", "backend_agent"),
++                parameters={
++                    "database_type": "postgresql",
++                    "orm": "sqlalchemy"
++                }
++            ))
++            task_id_counter += 1
++        
++        # Check for UI requirements
++        if any(re.search(pattern, description_lower) for pattern in self.patterns["ui"]):
++            tasks.append(Task(
++                task_id=f"TASK_{task_id_counter:03d}",
++                task_type=TaskType.CREATE_UI,
++                description="Create user interface components",
++                priority=2,
++                dependencies=[],
++                estimated_time=40,
++                agent_type=self.agent_mapping.get("ui", "frontend_agent"),
++                parameters={
++                    "framework": "nextjs",
++                    "styling": "tailwind",
++                    "responsive": True
++                }
++            ))
++            task_id_counter += 1
++        
++        # Check for deployment requirements
++        if any(re.search(pattern, description_lower) for pattern in self.patterns["deploy"]):
++            tasks.append(Task(
++                task_id=f"TASK_{task_id_counter:03d}",
++                task_type=TaskType.DEPLOY,
++                description="Set up deployment and CI/CD pipeline",
++                priority=3,
++                dependencies=[t.task_id for t in tasks if t.agent_type in ["backend_agent", "frontend_agent"]],
++                estimated_time=35,
++                agent_type=self.agent_mapping.get("deploy", "devops_agent"),
++                parameters={
++                    "platform": "vercel",
++                    "ci_cd": "github_actions",
++                    "containerize": True
++                }
++            ))
++            task_id_counter += 1
++        
++        # Always add testing task
++        tasks.append(Task(
++            task_id=f"TASK_{task_id_counter:03d}",
++            task_type=TaskType.TEST,
++            description="Create test suite and validation",
++            priority=2,
++            dependencies=[t.task_id for t in tasks],
++            estimated_time=20,
++            agent_type=self.agent_mapping.get("testing", "testing_agent"),
++            parameters={
++                "test_types": ["unit", "integration"],
++                "coverage_target": 80
++            }
++        ))
++        
++        return tasks
++    
++    def create_task_graph(self, tasks: List[Task]) -> Dict[str, Any]:
++        """Create a dependency graph from tasks"""
++        graph = {
++            "nodes": [],
++            "edges": [],
++            "critical_path": []
++        }
++        
++        for task in tasks:
++            graph["nodes"].append({
++                "id": task.task_id,
++                "label": task.description,
++                "type": task.task_type.value,
++                "agent": task.agent_type,
++                "priority": task.priority,
++                "estimated_time": task.estimated_time
++            })
++            
++            for dep in task.dependencies:
++                graph["edges"].append({
++                    "from": dep,
++                    "to": task.task_id,
++                    "type": "dependency"
++                })
++        
++        return graph
++    
++    def estimate_total_time(self, tasks: List[Task]) -> Dict[str, Any]:
++        """Estimate total development time based on task dependencies"""
++        # Simple estimation: sum of max parallel branch times
++        agent_tasks = {}
++        for task in tasks:
++            if task.agent_type not in agent_tasks:
++                agent_tasks[task.agent_type] = []
++            agent_tasks[task.agent_type].append(task)
++        
++        # Calculate parallel time (agents work concurrently)
++        parallel_times = []
++        for agent, agent_task_list in agent_tasks.items():
++            agent_time = sum(t.estimated_time for t in agent_task_list)
++            parallel_times.append(agent_time)
++        
++        # Total time is max of parallel chains + sequential dependency overhead
++        estimated_total = max(parallel_times) if parallel_times else 0
++        estimated_total = min(estimated_total * 1.2, 240)  # Add 20% buffer, cap at 4 hours
++        
++        return {
++            "estimated_minutes": int(estimated_total),
++            "parallel_agents": len(agent_tasks),
++            "total_tasks": len(tasks),
++            "breakdown": {agent: sum(t.estimated_time for t in tasks) 
++                         for agent, tasks in agent_tasks.items()}
++        }
++
++def parse_project_description(description: str) -> Dict[str, Any]:
++    """Convenience function to parse project description"""
++    parser = TaskParser()
++    tasks = parser.parse_natural_language(description)
++    task_graph = parser.create_task_graph(tasks)
++    time_estimate = parser.estimate_total_time(tasks)
++    
++    return {
++        "success": True,
++        "original_description": description,
++        "parsed_tasks": [task.to_dict() for task in tasks],
++        "task_graph": task_graph,
++        "time_estimate": time_estimate,
++        "agents_required": list(set(task.agent_type for task in tasks))
++    }
++
++if __name__ == "__main__":
++    # Example usage
++    example_description = """
++    I need a task management app with user authentication, 
++    a REST API for CRUD operations on tasks, 
++    a React frontend with a clean UI, 
++    and deployment to Vercel.
++    """
++    
++    result = parse_project_description(example_description)
++    print(json.dumps(result, indent=2))
+diff --git a/validation/security_scanner.py b/validation/security_scanner.py
+index e69de29..06d8f85 100644
+--- a/validation/security_scanner.py
++++ b/validation/security_scanner.py
+@@ -0,0 +1,267 @@
++"""
++Security Scanner Module
++Advanced security vulnerability detection
++"""
++
++import re
++import json
++from typing import Dict, List, Any, Optional
++from dataclasses import dataclass
++from .validator import ValidationResult, ValidationLevel, ValidationType
++
++@dataclass
++class SecurityFinding:
++    """Security finding with remediation guidance"""
++    vulnerability_id: str
++    title: str
++    description: str
++    severity: str  # critical, high, medium, low
++    cwe_id: Optional[str] = None
++    remediation: Optional[str] = None
++    references: List[str] = None
++    
++    def to_validation_result(self, file_path: str, line_number: int = None) -> ValidationResult:
++        """Convert to ValidationResult format"""
++        return ValidationResult(
++            check_id=f"SEC-{self.vulnerability_id}",
++            check_name=self.title,
++            validation_type=ValidationType.SECURITY,
++            level=ValidationLevel(self.severity),
++            passed=False,
++            message=self.description,
++            details={
++                "cwe_id": self.cwe_id,
++                "references": self.references
++            },
++            file_path=file_path,
++            line_number=line_number,
++            suggestion=self.remediation
++        )
++
++class SecurityScanner:
++    """Advanced security vulnerability scanner"""
++    
++    def __init__(self):
++        self.vulnerability_patterns = self._load_vulnerability_patterns()
++        self.findings: List[SecurityFinding] = []
++    
++    def _load_vulnerability_patterns(self) -> List[Dict[str, Any]]:
++        """Load vulnerability detection patterns"""
++        return [
++            {
++                "id": "CWE-78",
++                "title": "OS Command Injection",
++                "pattern": r'(os\.system|subprocess\.call|subprocess\.Popen|exec|eval)\s*\(.*\+.*\)',
++                "severity": "critical",
++                "description": "Potential OS command injection vulnerability",
++                "remediation": "Use safe APIs that separate commands from arguments"
++            },
++            {
++                "id": "CWE-79",
++                "title": "Cross-Site Scripting (XSS)",
++                "pattern": r'innerHTML\s*=.*(<script>|javascript:)',
++                "severity": "high",
++                "description": "Potential XSS vulnerability through innerHTML assignment",
++                "remediation": "Use textContent or sanitize user input"
++            },
++            {
++                "id": "CWE-89",
++                "title": "SQL Injection",
++                "pattern": r'(execute|query|exec)\s*\(.*["\'].*\+(user|input).*\)',
++                "severity": "critical",
++                "description": "Potential SQL injection vulnerability",
++                "remediation": "Use parameterized queries or ORM"
++            },
++            {
++                "id": "CWE-89-ASSIGN",
++                "title": "SQL Injection (string concatenation)",
++                "pattern": r'["\'].*\b(select|insert|update|delete)\b.*["\']\s*\+\s*\w+',
++                "severity": "critical",
++                "description": "Potential SQL injection via string concatenation with user input",
++                "remediation": "Use parameterized queries or ORM"
++            },
++            {
++                "id": "CWE-259",
++                "title": "Use of Hard-coded Password",
++                "pattern": r'password\s*=\s*["\'][^"\']+["\']',
++                "severity": "critical",
++                "description": "Hard-coded password found",
++                "remediation": "Use environment variables or secure credential storage"
++            },
++            {
++                "id": "CWE-798",
++                "title": "Use of Hard-coded Credentials",
++                "pattern": r'(api[_-]?key|secret|token)\s*=\s*["\'][^"\']+["\']',
++                "severity": "critical",
++                "description": "Hard-coded credentials found",
++                "remediation": "Use environment variables or secret management"
++            }
++        ]
++    
++    def scan_file(self, file_path: str, content: str) -> List[ValidationResult]:
++        """Scan a file for security vulnerabilities"""
++        results = []
++        
++        for vuln in self.vulnerability_patterns:
++            matches = re.finditer(vuln["pattern"], content, re.IGNORECASE | re.MULTILINE)
++            for match in matches:
++                finding = SecurityFinding(
++                    vulnerability_id=vuln["id"],
++                    title=vuln["title"],
++                    description=vuln["description"],
++                    severity=vuln["severity"],
++                    cwe_id=vuln["id"],
++                    remediation=vuln["remediation"],
++                    references=[f"https://cwe.mitre.org/data/definitions/{vuln['id'].split('-')[1]}.html"]
++                )
++                
++                line_number = content[:match.start()].count('\n') + 1
++                results.append(finding.to_validation_result(file_path, line_number))
++                self.findings.append(finding)
++        
++        return results
++    
++    def generate_security_report(self) -> Dict[str, Any]:
++        """Generate comprehensive security report"""
++        severity_counts = {}
++        for finding in self.findings:
++            severity_counts[finding.severity] = severity_counts.get(finding.severity, 0) + 1
++        
++        return {
++            "total_findings": len(self.findings),
++            "severity_counts": severity_counts,
++            "findings": [
++                {
++                    "id": f.vulnerability_id,
++                    "title": f.title,
++                    "severity": f.severity,
++                    "description": f.description,
++                    "remediation": f.remediation
++                }
++                for f in self.findings
++            ],
++            "risk_level": self._calculate_risk_level(severity_counts)
++        }
++    
++    def _calculate_risk_level(self, severity_counts: Dict[str, int]) -> str:
++        """Calculate overall risk level"""
++        if severity_counts.get("critical", 0) > 0:
++            return "CRITICAL"
++        elif severity_counts.get("high", 0) > 3:
++            return "HIGH"
++        elif severity_counts.get("high", 0) > 0 or severity_counts.get("medium", 0) > 5:
++            return "MEDIUM"
++        elif severity_counts.get("low", 0) > 0:
++            return "LOW"
++        else:
++            return "NONE"
++
++class LLMFingerprintDetector:
++    """
++    Detects LLM-generated code patterns
++    Helps identify code that might need human review
++    """
++    
++    def __init__(self):
++        self.llm_patterns = [
++            # Common LLM code patterns
++            (r'# This (function|class) (handles|manages|implements)', "LLM-style comment"),
++            (r'"""\s*[A-Z][^\.]*\.\s*\n\s*[A-Z][^\.]*\.', "LLM-style docstring"),
++            (r'try:\s*\n\s*.*\s*\nexcept Exception as e:\s*\n\s*.*print\(f', "LLM-style error handling"),
++            (r'# Note:|# Important:|# Please note:', "LLM instructional comment"),
++            (r'def\s+\w+\(.*\):\s*\n\s*"""\s*\n\s*Args:', "LLM-style Google docstring"),
++        ]
++    
++    def detect_fingerprints(self, content: str) -> List[Dict[str, Any]]:
++        """Detect LLM fingerprint patterns in code"""
++        findings = []
++        
++        for pattern, description in self.llm_patterns:
++            matches = list(re.finditer(pattern, content, re.MULTILINE))
++            for match in matches:
++                line_number = content[:match.start()].count('\n') + 1
++                findings.append({
++                    "pattern": description,
++                    "confidence": "medium",
++                    "line_number": line_number,
++                    "matched_text": match.group(0)[:100] + "..." if len(match.group(0)) > 100 else match.group(0),
++                    "suggestion": "Review this code section for correctness and security"
++                })
++        
++        return findings
++    
++    def calculate_llm_score(self, content: str) -> float:
++        """Calculate LLM fingerprint score (0-1)"""
++        total_patterns = len(self.llm_patterns)
++        if total_patterns == 0:
++            return 0.0
++        
++        matches = 0
++        for pattern, _ in self.llm_patterns:
++            if re.search(pattern, content, re.MULTILINE):
++                matches += 1
++        
++        return min(matches / total_patterns, 1.0)
++
++# Export convenience functions
++def scan_for_security_vulnerabilities(file_path: str, content: str) -> Dict[str, Any]:
++    """Convenience function for security scanning"""
++    scanner = SecurityScanner()
++    results = scanner.scan_file(file_path, content)
++    report = scanner.generate_security_report()
++    
++    return {
++        "file": file_path,
++        "vulnerabilities_found": len(results),
++        "security_report": report,
++        "validation_results": [r.to_dict() for r in results]
++    }
++
++def detect_llm_generated_code(content: str) -> Dict[str, Any]:
++    """Detect if code appears to be LLM-generated"""
++    detector = LLMFingerprintDetector()
++    fingerprints = detector.detect_fingerprints(content)
++    llm_score = detector.calculate_llm_score(content)
++    
++    return {
++        "llm_score": llm_score,
++        "likely_llm_generated": llm_score > 0.5,
++        "fingerprints_found": len(fingerprints),
++        "fingerprints": fingerprints,
++        "interpretation": {
++            "0-0.3": "Likely human-written or heavily edited",
++            "0.3-0.6": "Mixed human/LLM authorship",
++            "0.6-1.0": "Likely LLM-generated, review recommended"
++        }
++    }
++
++if __name__ == "__main__":
++    # Example usage
++    example_code = '''
++def process_user_input(user_input):
++    """Process user input safely.
++    
++    Args:
++        user_input (str): The user input to process
++        
++    Returns:
++        str: Processed result
++    """
++    try:
++        # Important: Sanitize input to prevent XSS
++        sanitized = user_input.replace("<", "&lt;").replace(">", "&gt;")
++        return f"Processed: {sanitized}"
++    except Exception as e:
++        print(f"Error processing input: {e}")
++        return ""
++    '''
++    
++    # Security scan
++    security_result = scan_for_security_vulnerabilities("example.py", example_code)
++    print("Security Scan Results:")
++    print(json.dumps(security_result, indent=2))
++    
++    # LLM detection
++    llm_result = detect_llm_generated_code(example_code)
++    print("\nLLM Detection Results:")
++    print(json.dumps(llm_result, indent=2))
+-- 
+2.52.0
+

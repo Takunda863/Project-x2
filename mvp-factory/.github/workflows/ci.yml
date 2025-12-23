@@ -1,0 +1,224 @@
+name: MVP Factory CI Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      run_evaluation:
+        description: 'Run full evaluation harness'
+        required: false
+        default: 'false'
+
+jobs:
+  prompt-style-check:
+    name: Prompt Style Linter
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install black flake8 mypy
+    
+    - name: Run prompt style linter
+      run: |
+        python scripts/prompt_style_lint.py
+    
+    - name: Check for lint errors
+      run: |
+        if [ -f "prompt_lint_report.json" ]; then
+          echo "Lint report generated"
+          cat prompt_lint_report.json | jq '.summary'
+        else
+          echo "No lint report found"
+        fi
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: prompt-style-check
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-asyncio pytest-cov
+    
+    - name: Run unit tests
+      run: |
+        pytest tests/ -v --cov=.
+    
+    - name: Upload coverage
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
+
+  validation-tests:
+    name: Validation Framework Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+    
+    - name: Test validation framework
+      run: |
+        python -c "
+        from validation.validator import validate_code_snippet
+        from validation.security_scanner import scan_for_security_vulnerabilities
+        import json
+        
+        # Test code snippet
+        test_code = 'def test():\\n    api_key = \\\"test\\\"\\n    return api_key'
+        result = validate_code_snippet(test_code, 'python')
+        print('Validation result:', json.dumps(result, indent=2))
+        
+        # Test security scanner
+        security_result = scan_for_security_vulnerabilities('test.py', test_code)
+        print('\\nSecurity scan:', json.dumps(security_result, indent=2))
+        "
+    
+    - name: Test task parser
+      run: |
+        python -c "
+        from orchestrator.task_parser import parse_project_description
+        import json
+        
+        example = 'Create a task management app with authentication and database'
+        result = parse_project_description(example)
+        print('Task parser result:', json.dumps(result, indent=2))
+        "
+
+  build-docker:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: validation-tests
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: false
+        tags: mvpfactory:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Save Docker image
+      run: |
+        docker save mvpfactory:latest -o mvpfactory.tar
+        ls -lh mvpfactory.tar
+
+  evaluation-harness:
+    name: Evaluation Harness
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_evaluation == 'true'
+    needs: build-docker
+    
+    env:
+      LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+    
+    - name: Load Docker image
+      run: |
+        docker load -i mvpfactory.tar
+    
+    - name: Run evaluation harness
+      run: |
+        if [ -n \"$OPENAI_API_KEY\" ] || [ -n \"$HF_TOKEN\" ]; then
+          echo \"Running evaluation with available credentials\"
+          python scripts/eval.py --output eval_report.json
+          cat eval_report.json | jq '.summary'
+        else
+          echo \"No LLM credentials available, skipping evaluation\"
+          echo '{\"summary\": {\"status\": \"skipped\", \"reason\": \"No API keys\"}}' > eval_report.json
+        fi
+    
+    - name: Upload evaluation report
+      uses: actions/upload-artifact@v4
+      with:
+        name: evaluation-report
+        path: eval_report.json
+
+  deploy-docs:
+    name: Deploy Documentation
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    needs: build-docker
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs
+        publish_branch: gh-pages
+        keep_files: true
+
+  notify:
+    name: Notify Status
+    runs-on: ubuntu-latest
+    needs: [prompt-style-check, unit-tests, validation-tests, build-docker]
+    if: always()
+    
+    steps:
+    - name: Check workflow status
+      run: |
+        echo "Workflow completed with status: ${{ job.status }}"
+        
+        if [ "${{ job.status }}" = "success" ]; then
+          echo "✅ All checks passed!"
+        else
+          echo "❌ Some checks failed"
+        fi

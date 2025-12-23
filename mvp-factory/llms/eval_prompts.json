@@ -1,0 +1,15 @@
+{
+  "style_checks": [
+    "Detect emoji usage in responses",
+    "Detect third-person comments (avoid 'The author...' style)",
+    "Detect tutorial or step-by-step instructional phrases when not requested"
+  ],
+  "functional_checks": [
+    "Given a backend endpoint spec, return runnable FastAPI code for the endpoint",
+    "Given a DB schema request, return SQLAlchemy models and migrations"
+  ],
+  "architecture_checks": [
+    "Verify files placed under correct top-level directories (backend/frontend/devops)",
+    "Detect dependency leakage between layers (frontend importing backend-only libs)"
+  ]
+}
